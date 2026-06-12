@@ -13,8 +13,9 @@ find_package(catkin REQUIRED COMPONENTS
     cv_bridge
     roslib
     )
-find_package(Ceres REQUIRED)
-find_package(Ceres REQUIRED PATHS "/home/lhk/Thirdparty/Ceres")
+# find_package(Ceres REQUIRED)
+# find_package(Ceres REQUIRED PATHS "/home/lhk/Thirdparty/Ceres")
+find_package(Ceres REQUIRED PATHS "/home/yanwei/slam_ws/output/3rdparty/lib/cmake/Ceres")
 set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 find_package(Eigen3)
 
@@ -24,7 +25,8 @@ option(onnxruntime_USE_TENSORRT "Build with TensorRT support" OFF)
 option(LIBPNG_ROOTDIR "libpng root dir")
 option(ONNXRUNTIME_ROOTDIR "onnxruntime root dir")
 
-set(ONNXRUNTIME_ROOTDIR "/opt/onnxruntime")
+# set(ONNXRUNTIME_ROOTDIR "/home/lhk/Thirdparty/onnxruntime")
+set(ONNXRUNTIME_ROOTDIR "/home/yanwei/slam_ws/src/opensource/dp/SUPER_VINS/onnxruntime-gpu")
 include_directories("${ONNXRUNTIME_ROOTDIR}/include")
 link_directories("${ONNXRUNTIME_ROOTDIR}/lib")
 

@@ -18,8 +18,10 @@ find_package(catkin REQUIRED COMPONENTS
     image_transport)
 
 find_package(OpenCV REQUIRED)
-find_package(Ceres REQUIRED PATHS "/home/lhk/Thirdparty/Ceres")
-set(ONNXRUNTIME_ROOTDIR "/opt/onnxruntime")
+# find_package(Ceres REQUIRED PATHS "/home/lhk/Thirdparty/Ceres")
+find_package(Ceres REQUIRED PATHS "/home/yanwei/slam_ws/output/3rdparty/lib/cmake/Ceres")
+# set(ONNXRUNTIME_ROOTDIR "/home/lhk/Thirdparty/onnxruntime")
+set(ONNXRUNTIME_ROOTDIR "/home/yanwei/slam_ws/src/opensource/dp/SUPER_VINS/onnxruntime-gpu")
 include_directories("${ONNXRUNTIME_ROOTDIR}/include")
 link_directories("${ONNXRUNTIME_ROOTDIR}/lib")
 
