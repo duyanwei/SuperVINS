@@ -59,8 +59,8 @@ max_num_iterations: 8   # max solver itrations, to guarantee real time
 keyframe_parallax: 10.0 # keyframe selection threshold (pixel)
 
 #deep learning feature points weights
-extractor_weight_path: "SuperVINS/supervins_estimator/weights_dpl/superpoint.onnx"
-matcher_weight_path: "SuperVINS/supervins_estimator/weights_dpl/superpoint_lightglue_fused.onnx" 
+extractor_weight_path: "weights_dpl/superpoint.onnx"
+matcher_weight_path: "weights_dpl/superpoint_lightglue_fused.onnx" 
 
 # Bag of Words path
 voc_relative_path: "SuperVINS/supervins_loop_fusion/src/ThirdParty/Voc/superpoint1.yml.gz" 

@@ -8,6 +8,7 @@
  *******************************************************/
 
 #include "parameters.h"
+#include <sys/stat.h>
 
 double INIT_DEPTH;
 double MIN_PARALLAX;
@@ -117,9 +118,11 @@ void readParameters(std::string config_file)
     MIN_PARALLAX = MIN_PARALLAX / FOCAL_LENGTH;
 
     fsSettings["output_path"] >> OUTPUT_FOLDER;
+    mkdir(OUTPUT_FOLDER.c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
     VINS_RESULT_PATH = OUTPUT_FOLDER + "/vio.csv";
     std::cout << "result path " << VINS_RESULT_PATH << std::endl;
     std::ofstream fout(VINS_RESULT_PATH, std::ios::out);
+    fout << "#TimeStamp Tx Ty Tz Qx Qy Qz Qw" << std::endl;
     fout.close();
 
     ESTIMATE_EXTRINSIC = fsSettings["estimate_extrinsic"];

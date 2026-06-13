@@ -1,0 +1,27 @@
+<launch>
+
+    <arg name="output_dir" default="/tmp/supervins_gazebo"/>
+
+    <!-- IMU frame transformer: Gazebo bags publish IMU on /imu0; transform to /camera/imu -->
+    <node pkg="imu_transformer" type="imu_transformer_node" name="imu_transformer_node">
+        <param name="target_frame" value="camera_infra1_optical_frame"/>
+        <remap from="/imu_in/data" to="/imu0"/>
+        <remap from="/imu_out/data" to="/camera/imu"/>
+    </node>
+
+    <!-- SuperVINS VIO estimator (stereo + IMU) -->
+    <node pkg="supervins" type="supervins_node" name="supervins_estimator"
+          args="$(find supervins)/../config/gazebo/gazebo_d435i_stereo_imu_config.yaml"
+          output="screen" required="true">
+        <!-- Override output directory (benchmark passes this via roslaunch arg) -->
+        <param name="output_dir" value="$(arg output_dir)"/>
+    </node>
+
+    <!-- SuperVINS loop fusion (pose graph optimization) -->
+    <!-- <node pkg="supervins_loop_fusion" type="supervins_loop_fusion_node" name="supervins_loop_fusion"
+          args="$(find supervins)/../config/gazebo/gazebo_d435i_stereo_imu_config.yaml"
+          output="screen" required="true">
+        <param name="output_dir" value="$(arg output_dir)"/>
+    </node> -->
+
+</launch>

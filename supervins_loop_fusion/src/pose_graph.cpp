@@ -10,6 +10,9 @@
  *******************************************************/
 
 #include "pose_graph.h"
+#include "parameters.h"
+#include <fstream>
+#include <iomanip>
 
 PoseGraph::PoseGraph()
 {
@@ -108,31 +111,18 @@ void PoseGraph::addKeyFrame(KeyFrame *cur_kf, bool flag_detect_loop)
     cur_kf->index = global_index;
     global_index++;
     int loop_index = -1;
+    LoopLog log_entry;
+    log_entry.kf_timestamp    = cur_kf->time_stamp;
+    log_entry.query_timestamp = cur_kf->time_stamp;
+    log_entry.num_frames      = global_index;
+    log_entry.num_points      = (int)cur_kf->point_3d.size();
+
     if (flag_detect_loop)
     {
         TicToc tmp_t;
-        // debug
-        std::cout << "detect loop" << std::endl;
-           // 开始计时
-           auto start = std::chrono::high_resolution_clock::now();
-
-           loop_index = detectLoop(cur_kf, cur_kf->index);
-
-           // 结束计时
-           auto end = std::chrono::high_resolution_clock::now();
-           std::chrono::duration<double> duration = end - start; // 计算持续时间
-
-           // 输出时间到控制台
-           // std::cout << "Duration: " << duration.count() << " seconds" << std::endl;
-
-           // 打开文件进行保存（以追加模式打开）
-           std::ofstream outFile("time_consumption/loop_frame_detection.txt", std::ios::app);
-           if (outFile.is_open()) {
-               outFile << duration.count() << std::endl; // 写入执行时间
-               outFile.close(); // 关闭文件
-           } else {
-               std::cerr << "Unable to open file" << std::endl; // 错误处理
-           }
+        loop_index = detectLoop(cur_kf, cur_kf->index);
+        log_entry.time_detect_ms  = tmp_t.toc();
+        log_entry.train_timestamp = (loop_index != -1) ? getKeyFrame(loop_index)->time_stamp : -1.0;
     }
     else
     {
@@ -147,6 +137,12 @@ void PoseGraph::addKeyFrame(KeyFrame *cur_kf, bool flag_detect_loop)
 
         if (cur_kf->findConnection(old_kf))
         {
+            log_entry.flag = 1;
+            int num_edges = 1;  // current KF's new loop edge
+            for (auto *kf : keyframelist)
+                if (kf->has_loop) num_edges++;
+            log_entry.num_edges = num_edges;
+
             if (earliest_loop_index > loop_index || earliest_loop_index == -1)
                 earliest_loop_index = loop_index;
 
@@ -200,6 +196,13 @@ void PoseGraph::addKeyFrame(KeyFrame *cur_kf, bool flag_detect_loop)
             m_optimize_buf.unlock();
         }
     }
+
+    if (flag_detect_loop)
+    {
+        std::lock_guard<std::mutex> lock(m_loop_log_);
+        loop_log_map_[log_entry.kf_timestamp] = log_entry;
+    }
+
     m_keyframelist.lock();
     Vector3d P;
     Matrix3d R;
@@ -589,15 +592,12 @@ void PoseGraph::optimize4DoF()
             m_keyframelist.unlock();
 
             ceres::Solve(options, &problem, &summary);
-            // std::cout << summary.BriefReport() << "\n";
-
-            // printf("pose optimization time: %f \n", tmp_t.toc());
-            /*
-            for (int j = 0 ; j < i; j++)
             {
-                printf("optimize i: %d p: %f, %f, %f\n", j, t_array[j][0], t_array[j][1], t_array[j][2] );
+                std::lock_guard<std::mutex> lock(m_loop_log_);
+                auto it_log = loop_log_map_.find(cur_kf->time_stamp);
+                if (it_log != loop_log_map_.end())
+                    it_log->second.time_optim_ms = tmp_t.toc();
             }
-            */
             m_keyframelist.lock();
             i = 0;
             for (it = keyframelist.begin(); it != keyframelist.end(); it++)
@@ -760,15 +760,12 @@ void PoseGraph::optimize6DoF()
             m_keyframelist.unlock();
 
             ceres::Solve(options, &problem, &summary);
-            // std::cout << summary.BriefReport() << "\n";
-
-            // printf("pose optimization time: %f \n", tmp_t.toc());
-            /*
-            for (int j = 0 ; j < i; j++)
             {
-                printf("optimize i: %d p: %f, %f, %f\n", j, t_array[j][0], t_array[j][1], t_array[j][2] );
+                std::lock_guard<std::mutex> lock(m_loop_log_);
+                auto it_log = loop_log_map_.find(cur_kf->time_stamp);
+                if (it_log != loop_log_map_.end())
+                    it_log->second.time_optim_ms = tmp_t.toc();
             }
-            */
             m_keyframelist.lock();
             i = 0;
             for (it = keyframelist.begin(); it != keyframelist.end(); it++)
@@ -814,6 +811,56 @@ void PoseGraph::optimize6DoF()
         std::this_thread::sleep_for(dura);
     }
     return;
+}
+
+void PoseGraph::saveKeyFrameTrajectory(const std::string &filename)
+{
+    std::cout << "\nSaving " << keyframelist.size() << " keyframe poses (TUM) to " << filename << " ...\n";
+    std::ofstream f(filename);
+    f << std::fixed;
+    f << "# timestamp tx ty tz qx qy qz qw\n";
+    m_keyframelist.lock();
+    for (auto *kf : keyframelist)
+    {
+        Eigen::Vector3d t;
+        Eigen::Matrix3d R;
+        kf->getPose(t, R);
+        Eigen::Quaterniond q(R);
+        f << std::setprecision(6) << kf->time_stamp << " "
+          << std::setprecision(7)
+          << t.x() << " " << t.y() << " " << t.z() << " "
+          << q.x() << " " << q.y() << " " << q.z() << " " << q.w() << "\n";
+    }
+    m_keyframelist.unlock();
+    f.close();
+    std::cout << "Saved keyframe trajectory.\n";
+}
+
+void PoseGraph::saveLoopLog(const std::string &filename)
+{
+    std::lock_guard<std::mutex> lock(m_loop_log_);
+    std::cout << "\nSaving " << loop_log_map_.size() << " loop log entries to " << filename << " ...\n";
+    std::ofstream f(filename);
+    f << std::fixed;
+    f << "# kf_timestamp query_timestamp train_timestamp flag time_detect_ms time_optim_ms num_frames num_points num_edges\n";
+    for (auto &kv : loop_log_map_)
+    {
+        const LoopLog &e = kv.second;
+        f << std::setprecision(6)
+          << e.kf_timestamp    << " "
+          << e.query_timestamp << " "
+          << e.train_timestamp << " "
+          << e.flag            << " "
+          << std::setprecision(3)
+          << e.time_detect_ms  << " "
+          << e.time_optim_ms   << " "
+          << std::setprecision(0)
+          << e.num_frames      << " "
+          << e.num_points      << " "
+          << e.num_edges       << "\n";
+    }
+    f.close();
+    std::cout << "Saved loop log.\n";
 }
 
 void PoseGraph::updatePath()

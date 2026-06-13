@@ -1,0 +1,21 @@
+<launch>
+
+    <arg name="output_prefix" default="/tmp/supervins"/>
+
+    <!-- SuperVINS VIO estimator (stereo + IMU) -->
+    <node pkg="supervins" type="supervins_node" name="supervins_estimator"
+          args="$(find supervins)/../config/tsrb/tsrb_d435i_stereo_imu_config.yaml"
+          output="screen" required="true">
+        <!-- Override output directory (benchmark passes this via roslaunch arg) -->
+        <param name="output_prefix" value="$(arg output_prefix)"/>
+    </node>
+
+    <!-- SuperVINS loop fusion (pose graph optimization) -->
+    <!-- <node pkg="supervins_loop_fusion" type="supervins_loop_fusion_node" name="supervins_loop_fusion"
+          args="$(find supervins)/../config/tsrb/tsrb_d435i_stereo_imu_config.yaml"
+          output="screen" required="true">
+        <param name="output_dir" value="$(arg output_dir)"/>
+        <param name="output_prefix" value="$(arg output_prefix)"/>
+    </node> -->
+
+</launch>

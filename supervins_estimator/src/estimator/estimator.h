@@ -8,7 +8,7 @@
  *******************************************************/
 
 #pragma once
- 
+
 #include <thread>
 #include <mutex>
 #include <std_msgs/Header.h>
@@ -16,6 +16,8 @@
 #include <ceres/ceres.h>
 #include <unordered_map>
 #include <queue>
+#include <fstream>
+#include <iomanip>
 #include <opencv2/core/eigen.hpp>
 #include <eigen3/Eigen/Dense>
 #include <eigen3/Eigen/Geometry>
@@ -37,6 +39,56 @@
 //#include "../featureTracker/feature_tracker.h"
 #include "../featureTracker/feature_tracker_dpl.h"
 #include "../featureTracker/feature_tracker.h"
+
+class timeLog {
+public:
+  timeLog(const double &timeStamp_ = 0) {
+    time_stamp = timeStamp_;
+    time_feature = 0;
+    time_poseTrack = 0;
+    time_windowOpt = 0;
+    time_total = 0;
+    num_poses = 0;
+    num_lmks = 0;
+  };
+
+  void setZero() {
+    time_stamp = 0;
+    time_feature = 0;
+    time_poseTrack = 0;
+    time_windowOpt = 0;
+    time_total = 0;
+    num_poses = 0;
+    num_lmks = 0;
+  };
+
+  double time_stamp;
+  double time_feature;
+  double time_poseTrack;
+  double time_windowOpt;
+  double time_total;
+  size_t num_poses;
+  size_t num_lmks;
+};
+
+class PoseLog {
+public:
+  PoseLog(const double &timeStamp_, const double &Tx_, const double &Ty_, const double &Tz_,
+       const double &Qx_, const double &Qy_, const double &Qz_, const double &Qw_) {
+    time_stamp = timeStamp_;
+    position(0) = Tx_;
+    position(1) = Ty_;
+    position(2) = Tz_;
+    orientation(0) = Qx_;
+    orientation(1) = Qy_;
+    orientation(2) = Qz_;
+    orientation(3) = Qw_;
+  };
+
+  double time_stamp;
+  Eigen::Vector4d orientation;
+  Eigen::Vector3d position;
+};
 
 class Estimator
 {
@@ -182,4 +234,47 @@ class Estimator
 
     bool initFirstPoseFlag;
     bool initThreadFlag;
+
+    std::vector<timeLog> logTracking;
+    timeLog logCurFrame;
+
+    void saveLogging(const std::string &filename) {
+        std::cout << std::endl << "Saving " << logTracking.size() << " records to time log file " << filename << " ..." << std::endl;
+        std::ofstream fFrameLog;
+        fFrameLog.open(filename.c_str());
+        fFrameLog << std::fixed;
+        fFrameLog << "#frame_time_stamp time_feature time_poseTrack time_windowOpt time_total pose_num feature_num" << std::endl;
+        for (size_t i = 0; i < logTracking.size(); i++) {
+            fFrameLog << std::setprecision(6)
+                      << logTracking[i].time_stamp << " "
+                      << logTracking[i].time_feature << " "
+                      << logTracking[i].time_poseTrack << " "
+                      << logTracking[i].time_windowOpt << " "
+                      << logTracking[i].time_total << " "
+                      << std::setprecision(0)
+                      << logTracking[i].num_poses << " "
+                      << logTracking[i].num_lmks << std::endl;
+        }
+        fFrameLog.close();
+        std::cout << "Finished saving log!" << std::endl;
+    }
+
+    std::vector<PoseLog> logFramePose;
+
+    void saveAllFrameTrack(const std::string &filename) {
+        std::cout << std::endl << "Saving " << logFramePose.size() << " records to track file " << filename << " ..." << std::endl;
+        std::ofstream f_realTimeTrack;
+        f_realTimeTrack.open(filename.c_str());
+        f_realTimeTrack << std::fixed;
+        f_realTimeTrack << "#TimeStamp Tx Ty Tz Qx Qy Qz Qw" << std::endl;
+        for (size_t i = 0; i < logFramePose.size(); i++) {
+            f_realTimeTrack << std::setprecision(6)
+                            << logFramePose[i].time_stamp << " "
+                            << std::setprecision(7)
+                            << logFramePose[i].position.transpose() << " "
+                            << logFramePose[i].orientation.transpose() << std::endl;
+        }
+        f_realTimeTrack.close();
+        std::cout << "Finished saving track!" << std::endl;
+    }
 };

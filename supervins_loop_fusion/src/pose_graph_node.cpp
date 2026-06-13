@@ -10,6 +10,7 @@
  *******************************************************/
 
 #include <vector>
+#include <sys/stat.h>
 #include <ros/ros.h>
 #include <nav_msgs/Odometry.h>
 #include <nav_msgs/Path.h>
@@ -76,6 +77,7 @@ ros::Publisher pub_odometry_rect;
 
 std::string BRIEF_PATTERN_FILE;
 std::string POSE_GRAPH_SAVE_PATH;
+std::string LOOP_OUTPUT_FOLDER;
 std::string VINS_RESULT_PATH;
 CameraPoseVisualization cameraposevisual(1, 0, 0, 1);
 Eigen::Vector3d last_t(-100, -100, -100);
@@ -668,19 +670,27 @@ int main(int argc, char **argv)
     fsSettings["pose_graph_save_path"] >> POSE_GRAPH_SAVE_PATH;
     POSE_GRAPH_SAVE_PATH=LOOP_PROJECT_SOURCE_DIR + "/" + POSE_GRAPH_SAVE_PATH;
     fsSettings["output_path"] >> VINS_RESULT_PATH;
-    VINS_RESULT_PATH=LOOP_PROJECT_SOURCE_DIR + "/" + VINS_RESULT_PATH;
+    // Support absolute paths in output_path (consistent with estimator behavior)
+    if (VINS_RESULT_PATH.empty() || VINS_RESULT_PATH[0] != '/')
+        VINS_RESULT_PATH = LOOP_PROJECT_SOURCE_DIR + "/" + VINS_RESULT_PATH;
     fsSettings["save_image"] >> DEBUG_IMAGE;
 
     LOAD_PREVIOUS_POSE_GRAPH = fsSettings["load_previous_pose_graph"];
+    LOOP_OUTPUT_FOLDER = VINS_RESULT_PATH;
+    mkdir(LOOP_OUTPUT_FOLDER.c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
     VINS_RESULT_PATH = VINS_RESULT_PATH + "/vio_loop.csv";
     std::ofstream fout(VINS_RESULT_PATH, std::ios::out);
+    fout << "#TimeStamp Tx Ty Tz Qx Qy Qz Qw" << std::endl;
     fout.close();
 
     // 设置逐帧 loop-corrected 位姿输出文件 (TUM format: timestamp tx ty tz qx qy qz qw)
     // Setup per-frame loop-corrected pose output file (TUM format for EVO evaluation)
     std::string output_path_str;
     fsSettings["output_path"] >> output_path_str;
-    LOOP_CORRECTED_PATH_FILE = LOOP_PROJECT_SOURCE_DIR + "/" + output_path_str + "/loop_corrected_tum.txt";
+    if (output_path_str.empty() || output_path_str[0] != '/')
+        LOOP_CORRECTED_PATH_FILE = LOOP_PROJECT_SOURCE_DIR + "/" + output_path_str + "/loop_corrected_tum.txt";
+    else
+        LOOP_CORRECTED_PATH_FILE = output_path_str + "/loop_corrected_tum.txt";
     {
         std::ofstream fout_lc(LOOP_CORRECTED_PATH_FILE, std::ios::out);
         fout_lc << "# timestamp tx ty tz qx qy qz qw" << std::endl;
@@ -691,6 +701,49 @@ int main(int argc, char **argv)
     int USE_IMU = fsSettings["imu"];
     posegraph.setIMUFlag(USE_IMU);
     fsSettings.release();
+
+    // Allow benchmark to override output directory via ROS param (set in launch file)
+    std::string LOOP_OUTPUT_PREFIX;  // if set, filenames are PREFIX_<name>.txt instead of DIR/<name>
+    {
+        std::string param_output_dir;
+        if (n.getParam("output_dir", param_output_dir) && !param_output_dir.empty())
+        {
+            LOOP_OUTPUT_FOLDER = param_output_dir;
+            mkdir(LOOP_OUTPUT_FOLDER.c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+            VINS_RESULT_PATH = LOOP_OUTPUT_FOLDER + "/vio_loop.csv";
+            {
+                std::ofstream fout(VINS_RESULT_PATH, std::ios::out);
+                fout << "#TimeStamp Tx Ty Tz Qx Qy Qz Qw" << std::endl;
+                fout.close();
+            }
+            LOOP_CORRECTED_PATH_FILE = LOOP_OUTPUT_FOLDER + "/loop_corrected_tum.txt";
+            {
+                std::ofstream fout_lc(LOOP_CORRECTED_PATH_FILE, std::ios::out);
+                fout_lc << "# timestamp tx ty tz qx qy qz qw" << std::endl;
+                fout_lc.close();
+            }
+            printf("[LoopFusion] output_dir overridden to: %s\n", LOOP_OUTPUT_FOLDER.c_str());
+        }
+
+        std::string param_output_prefix;
+        if (n.getParam("output_prefix", param_output_prefix) && !param_output_prefix.empty())
+        {
+            LOOP_OUTPUT_PREFIX = param_output_prefix;
+            VINS_RESULT_PATH = LOOP_OUTPUT_PREFIX + "_vio_loop.csv";
+            {
+                std::ofstream fout(VINS_RESULT_PATH, std::ios::out);
+                fout << "#TimeStamp Tx Ty Tz Qx Qy Qz Qw" << std::endl;
+                fout.close();
+            }
+            LOOP_CORRECTED_PATH_FILE = LOOP_OUTPUT_PREFIX + "_loop_corrected_tum.txt";
+            {
+                std::ofstream fout_lc(LOOP_CORRECTED_PATH_FILE, std::ios::out);
+                fout_lc << "# timestamp tx ty tz qx qy qz qw" << std::endl;
+                fout_lc.close();
+            }
+            printf("[LoopFusion] output_prefix set to: %s\n", LOOP_OUTPUT_PREFIX.c_str());
+        }
+    }
 
     if (LOAD_PREVIOUS_POSE_GRAPH)
     {
@@ -732,6 +785,17 @@ int main(int argc, char **argv)
     keyboard_command_process = std::thread(command);
 
     ros::spin();
+
+    if (!LOOP_OUTPUT_PREFIX.empty())
+    {
+        posegraph.saveKeyFrameTrajectory(LOOP_OUTPUT_PREFIX + "_KeyFrameTrajectory.txt");
+        posegraph.saveLoopLog(LOOP_OUTPUT_PREFIX + "_Log_LoopClosure.txt");
+    }
+    else
+    {
+        posegraph.saveKeyFrameTrajectory(LOOP_OUTPUT_FOLDER + "/KeyFrameTrajectory.txt");
+        posegraph.saveLoopLog(LOOP_OUTPUT_FOLDER + "/Log_LoopClosure.txt");
+    }
 
     return 0;
 }

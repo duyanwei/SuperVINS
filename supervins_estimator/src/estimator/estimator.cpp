@@ -173,6 +173,7 @@ void Estimator::inputImage(double t, const cv::Mat &_img, const cv::Mat &_img1)
     // Prepare feature frames to receive results returned by the feature tracker
     map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> featureFrame;
     TicToc featureTrackerTime;
+    logCurFrame.time_stamp = t;
     // 右目图像缺失的话，就只追踪左目图像
     // If the right eye image is missing, only the left eye image will be tracked.
     if (_img1.empty())
@@ -233,6 +234,8 @@ void Estimator::inputImage(double t, const cv::Mat &_img, const cv::Mat &_img1)
         SuperPointDescriptorsBuf.push(make_pair(t, descriptors));
         mSuperPointDescriptors.unlock();
     }
+
+    logCurFrame.time_feature = featureTrackerTime.toc() * 1e-3;
 
     if (SHOW_TRACK)
     {
@@ -386,6 +389,7 @@ void Estimator::processMeasurements()
             featureBuf.pop(); // 弹出最老的特征，因为已经赋予feature这个变量了
             mBuf.unlock();
 
+            TicToc t_total; // start after IMU wait; covers pre-integration + image processing
             if (USE_IMU)
             {
                 if (!initFirstPoseFlag) // 要是没有初始化位姿，首先要进行IMU位姿初始化，将初始位姿与重力方向对齐
@@ -406,26 +410,24 @@ void Estimator::processMeasurements()
                 }
             }
             mProcess.lock();                             // 上锁，防止其它线程改变内参、状态量等等
-            
-            // 开始计时
-            auto start = std::chrono::high_resolution_clock::now();
 
             processImage(feature.second, feature.first); // 入口函数，状态估计都在这函数里面开始进行了
 
-            // 结束计时
-            auto end = std::chrono::high_resolution_clock::now();
-            std::chrono::duration<double> duration = end - start; // 计算持续时间
+            logCurFrame.time_total = t_total.toc() * 1e-3; // end of process measurements; record total processing time for this frame
+            if (logCurFrame.time_stamp > 0)
+                logTracking.push_back(logCurFrame);
+            logCurFrame.setZero();
 
-            // 输出时间到控制台
-            // std::cout << "Duration: " << duration.count() << " seconds" << std::endl;
-
-            // 打开文件进行保存（以追加模式打开）
-            std::ofstream outFile("time_consumption/backend_optimization.txt", std::ios::app);
-            if (outFile.is_open()) {
-                outFile << duration.count() <<std::endl; // 写入执行时间
-                outFile.close(); // 关闭文件
-            } else {
-                std::cerr << "Unable to open file" << std::endl; // 错误处理
+            if (this->solver_flag == Estimator::SolverFlag::NON_LINEAR) {
+                Eigen::Quaterniond tmp_Q = Quaterniond(this->Rs[WINDOW_SIZE]);
+                logFramePose.push_back(PoseLog(curTime,
+                    this->Ps[WINDOW_SIZE].x(),
+                    this->Ps[WINDOW_SIZE].y(),
+                    this->Ps[WINDOW_SIZE].z(),
+                    tmp_Q.x(),
+                    tmp_Q.y(),
+                    tmp_Q.z(),
+                    tmp_Q.w()));
             }
 
             prevTime = curTime;
@@ -561,6 +563,7 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
     ROS_DEBUG("number of feature: %d", f_manager.getFeatureCount());
     Headers[frame_count] = header;
 
+    TicToc t_optim;
     ImageFrame imageframe(image, header);                                                        // 构建当前图像帧
     imageframe.pre_integration = tmp_pre_integration;                                            // 赋予当前图像帧的预积分量临时预积分量
     all_image_frame.insert(make_pair(header, imageframe));                                       // 插入到所有图像帧库里
@@ -613,6 +616,7 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
                 else
                     slideWindow();
             }
+            logCurFrame.time_windowOpt = t_optim.toc() * 1e-3;
         }
 
         // stereo + IMU initilization
@@ -620,6 +624,8 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
         if (STEREO && USE_IMU)
         {
             f_manager.initFramePoseByPnP(frame_count, Ps, Rs, tic, ric);
+            logCurFrame.time_poseTrack = t_optim.toc() * 1e-3;
+            t_optim.tic();
             f_manager.triangulate(frame_count, Ps, Rs, tic, ric);
             if (frame_count == WINDOW_SIZE)
             {
@@ -642,12 +648,15 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
                 slideWindow();
                 ROS_INFO("Initialization finish!");
             }
+            logCurFrame.time_windowOpt = t_optim.toc() * 1e-3;
         }
 
         // stereo only initilization
         if (STEREO && !USE_IMU)
         {
             f_manager.initFramePoseByPnP(frame_count, Ps, Rs, tic, ric);
+            logCurFrame.time_poseTrack = t_optim.toc() * 1e-3;
+            t_optim.tic();
             f_manager.triangulate(frame_count, Ps, Rs, tic, ric);
             optimization();
 
@@ -659,6 +668,7 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
                 slideWindow();
                 ROS_INFO("Initialization finish!");
             }
+            logCurFrame.time_windowOpt = t_optim.toc() * 1e-3;
         }
 
         if (frame_count < WINDOW_SIZE)
@@ -677,6 +687,8 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
         TicToc t_solve;
         if (!USE_IMU)
             f_manager.initFramePoseByPnP(frame_count, Ps, Rs, tic, ric);
+        logCurFrame.time_poseTrack = t_optim.toc() * 1e-3;
+        t_optim.tic();
         f_manager.triangulate(frame_count, Ps, Rs, tic, ric);
         optimization();
         set<int> removeIndex;
@@ -697,6 +709,7 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
             clearState();
             setParameter();
             ROS_WARN("system reboot!");
+            logCurFrame.time_windowOpt = t_optim.toc() * 1e-3;
             return;
         }
 
@@ -712,6 +725,7 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
         last_R0 = Rs[0];
         last_P0 = Ps[0];
         updateLatestStates();
+        logCurFrame.time_windowOpt = t_optim.toc() * 1e-3;
     }
 }
 

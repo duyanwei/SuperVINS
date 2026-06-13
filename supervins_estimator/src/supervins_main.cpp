@@ -14,6 +14,8 @@
 #include <map>
 #include <thread>
 #include <mutex>
+#include <fstream>
+#include <sys/stat.h>
 #include <ros/ros.h>
 #include <cv_bridge/cv_bridge.h>
 #include <opencv2/opencv.hpp>
@@ -284,6 +286,33 @@ int main(int argc, char **argv)
     // parameters, including camera parameters, imu parameters, feature parameters, etc., into variables in the file parameters.cpp
     readParameters(config_file);
 
+    // Allow benchmark to override output directory via ROS param (set in launch file)
+    std::string OUTPUT_PREFIX;  // if set, filenames are PREFIX_<name>.txt instead of DIR/<name>.txt
+    {
+        std::string param_output_dir;
+        if (n.getParam("output_dir", param_output_dir) && !param_output_dir.empty())
+        {
+            OUTPUT_FOLDER = param_output_dir;
+            mkdir(OUTPUT_FOLDER.c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+            VINS_RESULT_PATH = OUTPUT_FOLDER + "/vio.csv";
+            std::ofstream fout(VINS_RESULT_PATH, std::ios::out);
+            fout << "#TimeStamp Tx Ty Tz Qx Qy Qz Qw" << std::endl;
+            fout.close();
+            printf("[Estimator] output_dir overridden to: %s\n", OUTPUT_FOLDER.c_str());
+        }
+
+        std::string param_output_prefix;
+        if (n.getParam("output_prefix", param_output_prefix) && !param_output_prefix.empty())
+        {
+            OUTPUT_PREFIX = param_output_prefix;
+            VINS_RESULT_PATH = OUTPUT_PREFIX + "_vio.csv";
+            std::ofstream fout(VINS_RESULT_PATH, std::ios::out);
+            fout << "#TimeStamp Tx Ty Tz Qx Qy Qz Qw" << std::endl;
+            fout.close();
+            printf("[Estimator] output_prefix set to: %s\n", OUTPUT_PREFIX.c_str());
+        }
+    }
+
     // 路径配置
     // Path configuration
     std::string project_source_dir = PROJECT_SOURCE_DIR;
@@ -333,8 +362,17 @@ int main(int argc, char **argv)
     std::thread sync_thread{sync_process};
     ros::spin();
 
-    return 0;
+    std::cout << "terminated! saving the time cost log!" << std::endl;
+    if (!OUTPUT_PREFIX.empty())
+    {
+        estimator.saveLogging(OUTPUT_PREFIX + "_Latency.txt");
+        estimator.saveAllFrameTrack(OUTPUT_PREFIX + "_AllFrameTrajectory.txt");
+    }
+    else
+    {
+        estimator.saveLogging(OUTPUT_FOLDER + "/supervins_latency_ms.txt");
+        estimator.saveAllFrameTrack(OUTPUT_FOLDER + "/AllFrameTrajectory.txt");
+    }
 
-    
-    
+    return 0;
 }

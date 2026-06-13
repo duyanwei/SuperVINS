@@ -57,6 +57,19 @@
 using namespace DVision;
 // using namespace DBoW2;
 using namespace DBoW3;
+
+struct LoopLog {
+    double kf_timestamp    = -1.0;  // current keyframe timestamp (== query)
+    double query_timestamp = -1.0;  // same as kf_timestamp (DBoW3 query = current KF)
+    double train_timestamp = -1.0;  // matched KF timestamp, -1 if no candidate found
+    int    flag            = 0;     // 1 = loop accepted (findConnection succeeded)
+    double time_detect_ms  = -1.0;  // DBoW3 query + findConnection time (ms)
+    double time_optim_ms   = -1.0;  // pose-graph optimization time (ms), -1 if none triggered
+    int    num_frames      = -1;    // total keyframes in graph at detection time
+    int    num_points      = -1;    // 3D points in current keyframe
+    int    num_edges       = -1;    // total loop edges in graph after acceptance, -1 if no loop
+};
+
 class PoseGraph
 {
 public:
@@ -79,6 +92,8 @@ public:
 	void savePoseGraph();
 	void loadPoseGraph();
 	void publish();
+	void saveKeyFrameTrajectory(const std::string &filename);
+	void saveLoopLog(const std::string &filename);
 	Vector3d t_drift;
 	double yaw_drift;
 	Matrix3d r_drift;
@@ -102,6 +117,9 @@ private:
 	std::mutex m_drift;
 	std::thread t_optimization;
 	std::queue<int> optimize_buf;
+
+	std::map<double, LoopLog> loop_log_map_;
+	std::mutex m_loop_log_;
 
 	int global_index;
 	int sequence_cnt;

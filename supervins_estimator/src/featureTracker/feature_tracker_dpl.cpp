@@ -562,16 +562,16 @@ map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> FeatureTrackerDPL::trac
     // 输出时间到控制台
     std::cout << "Duration: " << duration.count() << " seconds" << std::endl;
 
-    // 打开文件进行保存（以追加模式打开）
-    std::ofstream outFile("time_consumption/feature_extraction_matching.txt", std::ios::app);
-    if (outFile.is_open()) {
-        outFile << duration.count() << ","; // 写入执行时间
-        outFile.close(); // 关闭文件
-    } else {
-        std::cerr << "Unable to open file" << std::endl; // 错误处理
-    }
+    // // 打开文件进行保存（以追加模式打开）
+    // std::ofstream outFile("time_consumption/feature_extraction_matching.txt", std::ios::app);
+    // if (outFile.is_open()) {
+    //     outFile << duration.count() << ","; // 写入执行时间
+    //     outFile.close(); // 关闭文件
+    // } else {
+    //     std::cerr << "Unable to open file" << std::endl; // 错误处理
+    // }
 
-    cout<<"save success"<<endl;
+    // cout<<"save success"<<endl;
 
     // 一些变量容器
     // some variables containers
